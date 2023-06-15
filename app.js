@@ -1,12 +1,14 @@
+require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
+const bcrypt = require('bcryptjs');
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
-const mongoDb = "mongodb+srv://blakevelemirovich:QkAbjDahkfCIx5bA@cluster0.l78viql.mongodb.net/?retryWrites=true&w=majority";
+const mongoDb = process.env.MONGODB;
 mongoose.connect(mongoDb, { useUnifiedTopology: true, useNewUrlParser: true });
 const db = mongoose.connection;
 db.on("error", console.error.bind(console, "mongo connection error"));
@@ -30,9 +32,16 @@ passport.use(
       if (!user) {
         return done(null, false, { message: "Incorrect username" });
       };
-      if (user.password !== password) {
-        return done(null, false, { message: "Incorrect password" });
-      };
+      bcrypt.compare(password, user.password, (err, res) => {
+        if (res) {
+          // passwords match! log user in
+          return done(null, user)
+        } else {
+          // passwords do not match!
+          return done(null, false, { message: "Incorrect password" })
+        }
+      })
+      
       return done(null, user);
     } catch(err) {
       return done(err);
@@ -70,9 +79,11 @@ app.get('/signup', (req, res) => res.render('sign-up-form'));
 
 app.post("/signup", async (req, res, next) => {
   try {
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
     const user = new User({
       username: req.body.username,
-      password: req.body.password
+      password: hashedPassword
     });
     const result = await user.save();
     res.redirect("/");
@@ -81,13 +92,11 @@ app.post("/signup", async (req, res, next) => {
   };
 });
 
-app.post(
-  "/log-in",
-  passport.authenticate("local", {
-    successRedirect: "/",
-    failureRedirect: "/"
-  })
-);
+app.post('/log-in', 
+  passport.authenticate('local', { failureRedirect: '/' }),
+  function(req, res) {
+    res.redirect('/');
+  });
 
 app.get("/logout", (req, res, next) => {
   req.logout(function (err) {
